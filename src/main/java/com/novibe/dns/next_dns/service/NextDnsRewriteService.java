@@ -82,4 +82,36 @@ public class NextDnsRewriteService {
         NextDnsRateLimitedApiProcessor.callApi(ids, nextDnsRewriteClient::deleteRewriteById);
     }
 
+    /**
+     * Оптимизированное обновление IP-адреса домена через один PUT-запрос вместо DELETE + POST.
+     * Сокращает количество сетевых запросов в 2 раза, предотвращая Rate Limit (60 req/min).
+     */
+    public void updateDnsRecordOptimized(String profileId, String recordId, String domain, String newIp, String apiKey) {
+        String url = "https://nextdns.io" + profileId + "/rewrites/" + recordId;
+        
+        String jsonBody = String.format("{\"content\": \"%s\", \"name\": \"%s\"}", newIp, domain);
+
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .header("X-Api-Key", apiKey)
+                .header("Content-Type", "application/json")
+                .PUT(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        try {
+            java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpResponse<String> response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                System.out.println("DEBUG: Record successfully updated via PUT for domain: " + domain);
+            } else if (response.statusCode() == 429) {
+                System.err.println("ERROR: Rate limit exceeded! NextDNS limited to 60 requests/min.");
+            } else {
+                System.err.println("ERROR: Failed to update record. Status code: " + response.statusCode());
+            }
+        } catch (Exception e) {
+            System.err.println("EXCEPTION: Error during HTTP PUT request: " + e.getMessage());
+        }
+    }
+
 }
